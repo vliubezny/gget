@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	ProgressNotAvailable = -1
-	DownloadFailure      = -2
+	ProgressNotAvailable = -1.0
+	DownloadFailure      = -2.0
 )
 
 var client = http.Client{
@@ -18,18 +18,14 @@ var client = http.Client{
 
 type progressNotifier struct {
 	total      int64
-	counter    int64
+	processed  int64
 	progressCh chan<- float64
 }
 
 func (pn *progressNotifier) Write(p []byte) (n int, err error) {
-	if pn.total > 0 {
-		pn.counter += int64(len(p))
-		var progress float64 = float64(pn.counter) * 100 / float64(pn.total)
-		pn.progressCh <- progress
-	} else {
-		pn.progressCh <- ProgressNotAvailable
-	}
+	pn.processed += int64(len(p))
+	var progress float64 = float64(pn.processed) * 100 / float64(pn.total)
+	pn.progressCh <- progress
 	return len(p), nil
 }
 
@@ -56,14 +52,19 @@ func downloadFile(filePath, fileURL string) <-chan float64 {
 		}
 		defer out.Close()
 
-		notifier := &progressNotifier{
-			total:      resp.ContentLength,
-			progressCh: output,
+		var source io.Reader
+		if resp.ContentLength > 0 {
+			notifier := &progressNotifier{
+				total:      resp.ContentLength,
+				progressCh: output,
+			}
+			source = io.TeeReader(resp.Body, notifier)
+		} else {
+			output <- ProgressNotAvailable
+			source = resp.Body
 		}
-		tee := io.TeeReader(resp.Body, notifier)
 
-		_, err = io.Copy(out, tee)
-		if err != nil {
+		if _, err = io.Copy(out, source); err != nil {
 			output <- DownloadFailure
 		}
 	}()

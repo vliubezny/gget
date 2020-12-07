@@ -13,8 +13,8 @@ func TestValidateURL(t *testing.T) {
 	}{
 		{"https://github.com/tenntenn/gopher-stickers/raw/master/png/angry.png", true},
 		{"https://github.com/angry.png", true},
-		{"https://github.com/", false},
-		{"https://github.com", false},
+		{"https://github.com/", true},
+		{"https://github.com", true},
 		{"github.com", false},
 		{"/", false},
 		{"", false},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net/url"
 	"os"
 	"os/signal"
@@ -12,15 +13,17 @@ import (
 const usage = "usage:  gget fileURL ..."
 
 func main() {
+	log.SetFlags(0) // disable timestamps
+
 	urls := os.Args[1:]
 	if len(urls) == 0 {
-		terminate(usage)
+		log.Fatal(usage)
 	}
 
 	for _, fileURL := range urls {
 		err := validateURL(fileURL)
 		if err != nil {
-			terminate(err.Error())
+			log.Fatal(err)
 		}
 	}
 
@@ -28,7 +31,7 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sigs
-		terminate("Canceled")
+		log.Fatal("Canceled")
 	}()
 
 	progressChannels := make(map[string]<-chan float64)
@@ -40,7 +43,7 @@ func main() {
 	initWriter(os.Stdout)
 	err := observeStatus(progressChannels)
 	if err != nil {
-		terminate(err.Error())
+		log.Fatal(err.Error())
 	}
 }
 
@@ -54,14 +57,5 @@ func validateURL(fileURL string) error {
 		return fmt.Errorf("URL should have http(s) scheme: %s", fileURL)
 	}
 
-	if len(u.EscapedPath()) <= 1 {
-		return fmt.Errorf("URL path is missing: %s", fileURL)
-	}
-
 	return nil
-}
-
-func terminate(message string) {
-	println(message)
-	os.Exit(1)
 }

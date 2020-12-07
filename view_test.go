@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-const expectedTable = `file1         file2         file3         file4           file5         
-  0.00%       100.00%       N/A           Download error  Error: -5     
+const expectedTable = `file1     file2     file3     file4     file5      
+  0.00%   100.00%   N/A       Error     Error: -5  
 `
 
 func TestPrintTable(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 var tw *tabwriter.Writer
 
 func initWriter(output io.Writer) {
-	tw = tabwriter.NewWriter(output, 14, 1, 2, ' ', 0)
+	tw = tabwriter.NewWriter(output, 10, 1, 2, ' ', 0)
 }
 
 func observeStatus(progressChannels map[string]<-chan float64) error {
@@ -77,7 +77,7 @@ func printTable(headers []string, state *sync.Map) error {
 		case progress == ProgressNotAvailable:
 			fmt.Fprintf(tw, "N/A\t")
 		case progress == DownloadFailure:
-			fmt.Fprintf(tw, "Download error\t")
+			fmt.Fprintf(tw, "Error\t")
 		default:
 			fmt.Fprintf(tw, "Error: %.0f\t", progress)
 		}
