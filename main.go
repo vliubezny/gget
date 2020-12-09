@@ -35,10 +35,6 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigs
-		cancel()
-	}()
 
 	state := newProgressState(files, os.Stdout)
 	wg := &sync.WaitGroup{}
@@ -58,15 +54,16 @@ func main() {
 		log.Fatal(err)
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
-
 	go func() {
+		ticker := time.NewTicker(1 * time.Second)
 		for {
 			select {
 			case <-ticker.C:
 				if err := state.print(); err != nil {
 					log.Fatal(err)
 				}
+			case <-sigs:
+				cancel()
 			case <-ctx.Done():
 				ticker.Stop()
 				return
