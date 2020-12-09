@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"os"
@@ -8,8 +9,8 @@ import (
 )
 
 const (
-	ProgressNotAvailable = -1.0
-	DownloadFailure      = -2.0
+	progressNotAvailable = -1.0
+	downloadFailure      = -2.0
 )
 
 var client = http.Client{
@@ -24,30 +25,36 @@ type progressNotifier struct {
 
 func (pn *progressNotifier) Write(p []byte) (n int, err error) {
 	pn.processed += int64(len(p))
-	var progress float64 = float64(pn.processed) * 100 / float64(pn.total)
-	pn.progressCh <- progress
+	pn.progressCh <- float64(pn.processed) * 100 / float64(pn.total)
 	return len(p), nil
 }
 
-func downloadFile(filePath, fileURL string) <-chan float64 {
+func downloadFile(ctx context.Context, filePath, fileURL string) <-chan float64 {
 	output := make(chan float64)
 	go func() {
 		defer close(output)
-		resp, err := client.Get(fileURL)
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
 		if err != nil {
-			output <- DownloadFailure
+			output <- downloadFailure
+			return
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			output <- downloadFailure
 			return
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			output <- DownloadFailure
+			output <- downloadFailure
 			return
 		}
 
 		out, err := os.Create(filePath)
 		if err != nil {
-			output <- DownloadFailure
+			output <- downloadFailure
 			return
 		}
 		defer out.Close()
@@ -60,12 +67,12 @@ func downloadFile(filePath, fileURL string) <-chan float64 {
 			}
 			source = io.TeeReader(resp.Body, notifier)
 		} else {
-			output <- ProgressNotAvailable
+			output <- progressNotAvailable
 			source = resp.Body
 		}
 
-		if _, err = io.Copy(out, source); err != nil {
-			output <- DownloadFailure
+		if _, err = io.Copy(out, source); err != nil && err != context.Canceled {
+			output <- downloadFailure
 		}
 	}()
 	return output

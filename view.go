@@ -5,84 +5,65 @@ import (
 	"io"
 	"sync"
 	"text/tabwriter"
-	"time"
 )
 
-var tw *tabwriter.Writer
-
-func initWriter(output io.Writer) {
-	tw = tabwriter.NewWriter(output, 10, 1, 2, ' ', 0)
+type progressState struct {
+	mux      *sync.Mutex
+	progress map[string]float64
+	headers  []string
+	writer   *tabwriter.Writer
+	printed  bool
 }
 
-func observeStatus(progressChannels map[string]<-chan float64) error {
-	wg := &sync.WaitGroup{}
-	wg.Add(len(progressChannels))
-	state := &sync.Map{}
-
-	// store headers to preserve column ordering
-	headers := make([]string, 0, len(progressChannels))
-
-	for filePath, progressCh := range progressChannels {
-		headers = append(headers, filePath)
-		state.Store(filePath, 0.0)
-		go func(filePath string, progressCh <-chan float64) {
-			defer wg.Done()
-			for progress := range progressCh {
-				state.Store(filePath, progress)
-			}
-		}(filePath, progressCh)
+func newProgressState(headers []string, output io.Writer) *progressState {
+	s := &progressState{
+		mux:      &sync.Mutex{},
+		progress: make(map[string]float64, len(headers)),
+		headers:  headers,
+		writer:   tabwriter.NewWriter(output, 10, 1, 2, ' ', 0),
 	}
 
-	printTable(headers, state)
-
-	done := make(chan bool, 1)
-	go func() {
-		wg.Wait()
-		done <- true
-	}()
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			moveCursorBeforeTable()
-			if err := printTable(headers, state); err != nil {
-				return err
-			}
-		case <-done:
-			moveCursorBeforeTable()
-			return printTable(headers, state)
-		}
+	for _, h := range headers {
+		s.progress[h] = 0.0
 	}
+
+	return s
 }
 
-func moveCursorBeforeTable() {
-	fmt.Print("\033[2A")
+func (s *progressState) update(header string, progress float64) {
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.progress[header] = progress
 }
 
-func printTable(headers []string, state *sync.Map) error {
-	for _, filePath := range headers {
-		fmt.Fprintf(tw, "%s\t", filePath)
-	}
-	fmt.Fprintln(tw)
+func (s *progressState) print() error {
+	s.mux.Lock()
+	defer s.mux.Unlock()
 
-	for _, filePath := range headers {
-		val, _ := state.Load(filePath)
-		progress := val.(float64)
+	if s.printed {
+		fmt.Fprint(s.writer, "\033[3A\n") // move cursor before table
+	}
+
+	for _, h := range s.headers {
+		fmt.Fprintf(s.writer, "%s\t", h)
+	}
+	fmt.Fprintln(s.writer)
+
+	for _, h := range s.headers {
+		progress := s.progress[h]
 		switch {
 		case progress >= 0:
-			fmt.Fprintf(tw, "%6.2f%%\t", progress)
-		case progress == ProgressNotAvailable:
-			fmt.Fprintf(tw, "N/A\t")
-		case progress == DownloadFailure:
-			fmt.Fprintf(tw, "Error\t")
+			fmt.Fprintf(s.writer, "%6.2f%%\t", progress)
+		case progress == progressNotAvailable:
+			fmt.Fprintf(s.writer, "N/A\t")
+		case progress == downloadFailure:
+			fmt.Fprintf(s.writer, "Error\t")
 		default:
-			fmt.Fprintf(tw, "Error: %.0f\t", progress)
+			fmt.Fprintf(s.writer, "Error: %.0f\t", progress)
 		}
 	}
-	fmt.Fprintln(tw)
+	fmt.Fprintln(s.writer)
+	s.printed = true
 
-	return tw.Flush()
+	return s.writer.Flush()
 }
